@@ -221,6 +221,7 @@ function line(l) {
   } else if (l === 'K0') { msg('Parcheggio: nessun varco trovato in 20 s.');
   } else if (l === 'Y0') { msg('Percorso completato.');
   } else if (l === 'STUCK') { msg('Vaga: ero incastrato, mi libero.');
+  } else if (l === 'STALL') { msg(curMode === 0 ? 'Bloccato: motori fermati. Sterza o vai indietro per ripartire.' : 'Bloccato: indietro e cambio direzione.'); try { navigator.vibrate && navigator.vibrate(150); } catch (e) {}
   } else if (l[0] === 'X' && l.length === 2) { $('xact').value = l[1];
   } else if (l[0] === 'C') {
     center = +l.slice(1); $('cen').textContent = center;
