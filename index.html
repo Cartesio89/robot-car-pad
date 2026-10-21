@@ -58,6 +58,10 @@ canvas#rad { width: 100%; height: 100%; display: block; min-height: 120px; }
 .row label { font-size: .8rem; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
 input[type=range] { flex: 1; accent-color: var(--accent); }
 #stop { background: var(--bad); border-color: var(--bad); color: #fff; min-width: 96px; }
+.cal { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cal span { font-family: var(--mono); font-size: .85rem; color: var(--mute); }
+.cal b { font-family: var(--mono); min-width: 3ch; text-align: center; font-variant-numeric: tabular-nums; }
+.cal button { padding: 8px 12px; }
 #msg { font-family: var(--mono); font-size: .75rem; color: var(--mute); min-height: 1.2em; }
 @media (prefers-reduced-motion: no-preference) { #knob { transition: left .08s, top .08s; } #knob.drag { transition: none; } }
 </style>
@@ -92,6 +96,16 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
     <input id="spd" type="range" min="80" max="255" value="180">
     <button id="stop" type="button">STOP</button>
   </div>
+  <details>
+    <summary style="color:var(--mute);font-size:.85rem;cursor:pointer">Calibra occhi</summary>
+    <div class="cal" style="margin-top:8px">
+      <span>Centro</span>
+      <button type="button" data-c="5">◀◀</button><button type="button" data-c="1">◀</button>
+      <b id="cen">—</b>
+      <button type="button" data-c="-1">▶</button><button type="button" data-c="-5">▶▶</button>
+      <span>Premi finché gli occhi guardano dritto. Si salva da solo.</span>
+    </div>
+  </details>
   <div id="msg">Accendi il robot, poi tocca Connetti (Chrome su Android).</div>
 </div>
 
@@ -144,11 +158,14 @@ function onData(t) {
 }
 function line(l) {
   if (l[0] === 'T') {
-    const [m, d, lmr] = l.slice(1).split(',');
+    const [m, d, lmr, , cen] = l.slice(1).split(',');
+    if (cen) { center = +cen; $('cen').textContent = cen; }
     $('dist').textContent = d > 0 ? d : '—';
     for (let k = 0; k < 3; k++) $('l' + k).classList.toggle('hit', lmr && lmr[k] === '1');
     setMode(+m, false);
-    if (+m !== 4) { pts.set(90, +d); draw(); }
+    if (+m !== 4) { pts.set(0, +d); draw(); }
+  } else if (l[0] === 'C') {
+    center = +l.slice(1); $('cen').textContent = center;
   } else if (l[0] === 'P') {
     const [a, d] = l.slice(1).split(',').map(Number);
     pts.set(a, d); draw();
@@ -166,13 +183,20 @@ function draw() {
   g.fillStyle = css('--accent');
   for (const [a, d] of pts) {
     if (!(d > 0)) continue;
-    const rr = R * Math.min(d, MAX) / MAX, th = Math.PI - a * Math.PI / 180;
+    const rr = R * Math.min(d, MAX) / MAX, th = Math.PI / 2 + a * Math.PI / 180;
     g.beginPath(); g.arc(cx + rr * Math.cos(th), cy - rr * Math.sin(th), 7, 0, 7); g.fill();
   }
   g.fillStyle = css('--fg'); g.beginPath(); g.arc(cx, cy, 8, 0, 7); g.fill();
 }
 draw();
 
+// --- calibrazione occhi
+let center = null;
+document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => {
+  if (center === null) { msg('Connettiti prima al robot.'); return; }
+  center = Math.max(40, Math.min(140, center + +b.dataset.c));
+  $('cen').textContent = center; send('C' + center);
+}));
 // --- modalità
 let curMode = 0;
 function setMode(m, tx = true) {
