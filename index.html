@@ -1,0 +1,215 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8">
+<title>Robot Car Pad</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen gamepad — status strip, radar/telemetry, joystick, mode keys */
+:root {
+  --bg: #e9ecef; --panel: #f7f8f9; --fg: #1d2329; --mute: #66717c;
+  --line: #c9d0d6; --accent: #e8a300; --ok: #1f9d55; --bad: #d64545;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161a; --panel: #1b2026; --fg: #e6eaee; --mute: #8a96a1;
+  --line: #2c343c; --accent: #f5b400; --ok: #3ccf7a; --bad: #ff6b6b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161a; --panel: #1b2026; --fg: #e6eaee; --mute: #8a96a1;
+  --line: #2c343c; --accent: #f5b400; --ok: #3ccf7a; --bad: #ff6b6b; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--display);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px; box-sizing: border-box;
+  touch-action: none; user-select: none; -webkit-user-select: none; overscroll-behavior: none; }
+.app { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; height: 100%; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-size: 1.15rem; margin: 0; letter-spacing: .04em; text-transform: uppercase; }
+h1 span { color: var(--accent); }
+button { font-family: var(--display); font-weight: 700; color: var(--fg); background: var(--panel);
+  border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 14px; font-size: .95rem; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#connect { display: flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+.on .dot { background: var(--ok); }
+.tele { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: stretch; }
+.radar { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; position: relative; min-width: 0; }
+canvas#rad { width: 100%; height: 100%; display: block; min-height: 120px; }
+.stats { display: flex; flex-direction: column; gap: 8px; font-family: var(--mono); min-width: 112px; }
+.stat { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.stat small { display: block; color: var(--mute); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
+.stat b { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.leds { display: flex; gap: 6px; margin-top: 4px; }
+.leds i { width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--line); background: transparent; }
+.leds i.hit { background: var(--fg); }
+.padwrap { flex: 1; display: grid; place-items: center; min-height: 220px; }
+#pad { width: min(72vw, 300px); aspect-ratio: 1; max-width: 100%; border-radius: 50%;
+  background: radial-gradient(circle, var(--panel) 0 55%, transparent 56%),
+              repeating-conic-gradient(var(--line) 0 1deg, transparent 1deg 45deg), var(--panel);
+  border: 2px solid var(--line); position: relative; touch-action: none; }
+#knob { width: 34%; aspect-ratio: 1; border-radius: 50%; background: var(--accent);
+  position: absolute; left: 33%; top: 33%; box-shadow: 0 4px 14px rgb(0 0 0 / .25); }
+.modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.modes button { padding: 10px 2px; font-size: .78rem; }
+.modes button.act { background: var(--accent); border-color: var(--accent); color: #1d1400; }
+.row { display: flex; gap: 10px; align-items: center; }
+.row label { font-size: .8rem; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+input[type=range] { flex: 1; accent-color: var(--accent); }
+#stop { background: var(--bad); border-color: var(--bad); color: #fff; min-width: 96px; }
+#msg { font-family: var(--mono); font-size: .75rem; color: var(--mute); min-height: 1.2em; }
+@media (prefers-reduced-motion: no-preference) { #knob { transition: left .08s, top .08s; } #knob.drag { transition: none; } }
+</style>
+</head><body>
+
+<div class="app">
+  <header>
+    <h1>Robot<span>Car</span> Pad</h1>
+    <button id="connect" type="button"><span class="dot"></span><span id="ctext">Connetti</span></button>
+  </header>
+
+  <div class="tele">
+    <div class="radar"><canvas id="rad" width="600" height="320"></canvas></div>
+    <div class="stats">
+      <div class="stat"><small>Distanza</small><b id="dist">—</b> <span style="color:var(--mute)">cm</span></div>
+      <div class="stat"><small>Linea S·C·D</small><div class="leds"><i id="l0"></i><i id="l1"></i><i id="l2"></i></div></div>
+    </div>
+  </div>
+
+  <div class="padwrap"><div id="pad" aria-label="Joystick"><div id="knob"></div></div></div>
+
+  <div class="modes" id="modes">
+    <button type="button" data-m="0" class="act">Manuale</button>
+    <button type="button" data-m="1">Evita</button>
+    <button type="button" data-m="2">Linea</button>
+    <button type="button" data-m="3">Segui</button>
+    <button type="button" data-m="4">Radar</button>
+  </div>
+
+  <div class="row">
+    <label for="spd">Velocità</label>
+    <input id="spd" type="range" min="80" max="255" value="180">
+    <button id="stop" type="button">STOP</button>
+  </div>
+  <div id="msg">Accendi il robot, poi tocca Connetti (Chrome su Android).</div>
+</div>
+
+<script>
+const SVC = [0xffe0, 0xfff0, '0000ffe0-0000-1000-8000-00805f9b34fb'];
+let chr = null, dev = null, busy = false, queue = [], rx = '';
+const $ = id => document.getElementById(id);
+const msg = t => $('msg').textContent = t;
+
+async function connect() {
+  if (!navigator.bluetooth) { msg('Bluetooth web non disponibile: apri questa pagina in Chrome su Android.'); return; }
+  try {
+    dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: SVC });
+    msg('Connessione a ' + (dev.name || 'dispositivo') + '…');
+    dev.addEventListener('gattserverdisconnected', () => { chr = null; ui(false); msg('Disconnesso.'); });
+    const srv = await dev.gatt.connect();
+    let found = null;
+    for (const s of await srv.getPrimaryServices()) {
+      for (const c of await s.getCharacteristics()) {
+        if ((c.properties.write || c.properties.writeWithoutResponse) && c.properties.notify) { found = c; break; }
+      }
+      if (found) break;
+    }
+    if (!found) throw new Error('Nessun canale seriale trovato sul modulo');
+    chr = found;
+    await chr.startNotifications();
+    chr.addEventListener('characteristicvaluechanged', e => onData(new TextDecoder().decode(e.target.value)));
+    ui(true); msg('Connesso a ' + (dev.name || 'robot') + '.');
+    send('V' + $('spd').value);
+  } catch (e) { msg('Errore: ' + e.message); ui(false); }
+}
+function ui(on) { $('connect').classList.toggle('on', on); $('ctext').textContent = on ? 'Connesso' : 'Connetti'; }
+
+function send(s) { if (!chr) return; queue.push(s + '\n'); pump(); }
+async function pump() {
+  if (busy || !chr || !queue.length) return;
+  busy = true;
+  const s = queue.shift();
+  try { chr.properties.writeWithoutResponse ? await chr.writeValueWithoutResponse(new TextEncoder().encode(s))
+                                            : await chr.writeValue(new TextEncoder().encode(s)); }
+  catch (e) { msg('Invio fallito: ' + e.message); }
+  busy = false; pump();
+}
+
+// --- telemetria
+const pts = new Map();
+function onData(t) {
+  rx += t; let i;
+  while ((i = rx.indexOf('\n')) >= 0) { line(rx.slice(0, i).trim()); rx = rx.slice(i + 1); }
+}
+function line(l) {
+  if (l[0] === 'T') {
+    const [m, d, lmr] = l.slice(1).split(',');
+    $('dist').textContent = d > 0 ? d : '—';
+    for (let k = 0; k < 3; k++) $('l' + k).classList.toggle('hit', lmr && lmr[k] === '1');
+    setMode(+m, false);
+    if (+m !== 4) { pts.set(90, +d); draw(); }
+  } else if (l[0] === 'P') {
+    const [a, d] = l.slice(1).split(',').map(Number);
+    pts.set(a, d); draw();
+  }
+}
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function draw() {
+  const c = $('rad'), g = c.getContext('2d'), W = c.width, H = c.height, cx = W / 2, cy = H - 14, R = H - 30, MAX = 200;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = css('--line'); g.lineWidth = 2; g.fillStyle = css('--mute'); g.font = '20px ' + css('--mono');
+  for (const r of [50, 100, 150, 200]) {
+    g.beginPath(); g.arc(cx, cy, R * r / MAX, Math.PI, 0); g.stroke();
+    g.fillText(r, cx + R * r / MAX - 18, cy + 0);
+  }
+  g.fillStyle = css('--accent');
+  for (const [a, d] of pts) {
+    if (!(d > 0)) continue;
+    const rr = R * Math.min(d, MAX) / MAX, th = Math.PI - a * Math.PI / 180;
+    g.beginPath(); g.arc(cx + rr * Math.cos(th), cy - rr * Math.sin(th), 7, 0, 7); g.fill();
+  }
+  g.fillStyle = css('--fg'); g.beginPath(); g.arc(cx, cy, 8, 0, 7); g.fill();
+}
+draw();
+
+// --- modalità
+let curMode = 0;
+function setMode(m, tx = true) {
+  curMode = m;
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('act', +b.dataset.m === m));
+  if (tx) { pts.clear(); draw(); send('M' + m); }
+}
+$('modes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMode(+b.dataset.m); });
+$('spd').addEventListener('change', e => send('V' + e.target.value));
+$('stop').addEventListener('click', () => { jx = jy = 0; setMode(0); send('S'); });
+$('connect').addEventListener('click', connect);
+
+// --- joystick
+const pad = $('pad'), knob = $('knob');
+let jx = 0, jy = 0, active = false;
+function move(e) {
+  const r = pad.getBoundingClientRect(), half = r.width / 2;
+  let x = (e.clientX - r.left - half) / half, y = (e.clientY - r.top - half) / half;
+  const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+  jx = x; jy = -y;
+  knob.style.left = (33 + x * 33) + '%'; knob.style.top = (33 + y * 33) + '%';
+}
+pad.addEventListener('pointerdown', e => { active = true; knob.classList.add('drag'); pad.setPointerCapture(e.pointerId); move(e); });
+pad.addEventListener('pointermove', e => { if (active) move(e); });
+const release = () => { active = false; jx = jy = 0; knob.classList.remove('drag'); knob.style.left = knob.style.top = '33%'; send('J0,0'); };
+pad.addEventListener('pointerup', release); pad.addEventListener('pointercancel', release);
+
+setInterval(() => {
+  if (!active || !chr) return;
+  const s = +$('spd').value;
+  let l = (jy + jx) * s, r = (jy - jx) * s;
+  const k = Math.max(1, Math.abs(l) / 255, Math.abs(r) / 255); l /= k; r /= k;
+  if (Math.abs(l) < 40 && Math.abs(r) < 40) l = r = 0;
+  if (curMode !== 0) setMode(0, false);
+  send('J' + Math.round(l) + ',' + Math.round(r));
+}, 120);
+
+try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
+</script>
+</body></html>
